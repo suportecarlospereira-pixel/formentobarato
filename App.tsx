@@ -1,0 +1,748 @@
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  ShoppingBag, 
+  MapPin, 
+  Search, 
+  ChevronRight, 
+  Bike, 
+  Store, 
+  Sparkles,
+  ArrowRight,
+  X,
+  User as UserIcon,
+  LogOut,
+  Settings,
+  Plus,
+  Edit2,
+  Trash2,
+  Users,
+  Map,
+  Package,
+  Save,
+  Clock,
+  Home,
+  Loader2
+} from 'lucide-react';
+import { Product, CartItem, Category, User, Neighborhood, Order } from './types';
+import { CATEGORIES } from './constants';
+import { ProductCard } from './components/ProductCard';
+import { AIChef } from './components/AIChef';
+import { AuthModal } from './components/AuthModal';
+import { AdminProductModal } from './components/AdminProductModal';
+import { CheckoutModal } from './components/CheckoutModal';
+import { OrderHistoryModal } from './components/OrderHistoryModal';
+import { storageService } from './services/storageService';
+
+const App: React.FC = () => {
+  // Global Data State
+  const [products, setProducts] = useState<Product[]>([]);
+  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [userOrders, setUserOrders] = useState<Order[]>([]);
+
+  // UI State
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  const [selectedCategory, setSelectedCategory] = useState<Category>('Todos');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isChefOpen, setIsChefOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false); 
+  
+  // Admin State
+  const [activeAdminTab, setActiveAdminTab] = useState<'products' | 'neighborhoods' | 'users'>('products');
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
+  const [editingNeighborhood, setEditingNeighborhood] = useState<string | null>(null);
+  const [tempFee, setTempFee] = useState<string>('');
+
+  // Checkout State
+  const [deliveryAddress, setDeliveryAddress] = useState({
+    street: '',
+    number: '',
+    complement: '',
+    neighborhoodId: 'cordeiros'
+  });
+
+  const refreshData = async () => {
+    setIsRefreshing(true);
+    const [loadedProducts, loadedNeighborhoods] = await Promise.all([
+      storageService.getProducts(),
+      storageService.getNeighborhoods()
+    ]);
+    setProducts(loadedProducts);
+    setNeighborhoods(loadedNeighborhoods);
+    
+    if (user) {
+      const allOrders = await storageService.getOrders();
+      if (user.role === 'admin') {
+         setUserOrders(allOrders); // Admin sees all
+         const loadedUsers = await storageService.getUsers();
+         setUsers(loadedUsers);
+      } else {
+         setUserOrders(allOrders.filter(o => o.userId === user.id));
+      }
+    }
+    setIsRefreshing(false);
+  };
+
+  // Load Data on Mount (Async)
+  useEffect(() => {
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      try {
+        const [loadedProducts, loadedNeighborhoods] = await Promise.all([
+          storageService.getProducts(),
+          storageService.getNeighborhoods()
+        ]);
+        
+        setProducts(loadedProducts);
+        setNeighborhoods(loadedNeighborhoods);
+        
+        const currentUser = storageService.getCurrentUser();
+        setUser(currentUser);
+        
+        if (currentUser) {
+          if (currentUser.address) {
+            setDeliveryAddress({
+              street: currentUser.address.street,
+              number: currentUser.address.number,
+              complement: currentUser.address.complement || '',
+              neighborhoodId: currentUser.address.neighborhoodId
+            });
+          }
+          const allOrders = await storageService.getOrders();
+          if (currentUser.role === 'admin') {
+             setUserOrders(allOrders);
+             const loadedUsers = await storageService.getUsers();
+             setUsers(loadedUsers);
+          } else {
+             setUserOrders(allOrders.filter(o => o.userId === currentUser.id));
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load data", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, []);
+
+  const handleLogin = async (loggedInUser: User) => {
+    setUser(loggedInUser);
+    if (loggedInUser.address) {
+       setDeliveryAddress({
+        street: loggedInUser.address.street,
+        number: loggedInUser.address.number,
+        complement: loggedInUser.address.complement || '',
+        neighborhoodId: loggedInUser.address.neighborhoodId
+      });
+    }
+    
+    await refreshData();
+
+    if (loggedInUser.role === 'admin') {
+      setIsAdminMode(true);
+    }
+  };
+
+  const handleLogout = async () => {
+    await storageService.logout();
+    setUser(null);
+    setIsAdminMode(false);
+    setCart([]);
+    setUserOrders([]);
+  };
+
+  const filteredProducts = useMemo(() => {
+    return products.filter(product => {
+      const matchesCategory = selectedCategory === 'Todos' || product.category === selectedCategory;
+      const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesSearch;
+    });
+  }, [selectedCategory, searchQuery, products]);
+
+  const cartTotal = useMemo(() => {
+    return cart.reduce((total, item) => total + (item.price * item.quantity), 0);
+  }, [cart]);
+
+  const cartItemCount = useMemo(() => {
+    return cart.reduce((count, item) => count + item.quantity, 0);
+  }, [cart]);
+
+  const selectedNeighborhood = neighborhoods.find(n => n.id === deliveryAddress.neighborhoodId);
+  const deliveryFee = selectedNeighborhood ? selectedNeighborhood.deliveryFee : 0;
+  const finalTotal = cartTotal + deliveryFee;
+
+  // Handlers
+  const addToCart = (product: Product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === product.id);
+      if (existing) {
+        if (existing.quantity >= product.stock) return prev; 
+        return prev.map(item => 
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
+      }
+      if (product.stock <= 0) return prev;
+      return [...prev, { ...product, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (productId: string) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.id === productId);
+      if (existing && existing.quantity > 1) {
+        return prev.map(item => 
+          item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
+        );
+      }
+      return prev.filter(item => item.id !== productId);
+    });
+  };
+
+  const handleInitiateCheckout = async () => {
+    if (!user) {
+      setIsCartOpen(false);
+      setIsAuthOpen(true);
+      return;
+    }
+
+    if (!deliveryAddress.street || !deliveryAddress.number) {
+      alert("Por favor, preencha o endereço de entrega.");
+      return;
+    }
+
+    // Verify Stock
+    for (const item of cart) {
+      const product = products.find(p => p.id === item.id);
+      if (!product || product.stock < item.quantity) {
+        alert(`O produto ${item.name} não tem estoque suficiente.`);
+        return;
+      }
+    }
+
+    await storageService.updateUserAddress(user.email, {
+       street: deliveryAddress.street,
+       number: deliveryAddress.number,
+       complement: deliveryAddress.complement,
+       neighborhoodId: deliveryAddress.neighborhoodId
+    });
+
+    setIsCheckoutOpen(true);
+  };
+
+  const handleCheckoutSuccess = async () => {
+    // Optimistic Update
+    const updatedProducts = products.map(p => {
+      const cartItem = cart.find(c => c.id === p.id);
+      if (cartItem) {
+        return { ...p, stock: p.stock - cartItem.quantity };
+      }
+      return p;
+    });
+
+    setProducts(updatedProducts);
+    
+    // In real scenario we would call a batch update or order creation that handles stock decrement server side
+    // For now we just refresh
+    await refreshData();
+
+    setCart([]);
+    setIsCartOpen(false);
+    setIsCheckoutOpen(false);
+    setIsOrderHistoryOpen(true); 
+  };
+
+  // Admin Handlers
+  const handleSaveProduct = async (product: Product) => {
+    // Optimistic UI
+    let newProducts = [...products];
+    const index = newProducts.findIndex(p => p.id === product.id);
+    if (index >= 0) {
+      newProducts[index] = product;
+    } else {
+      newProducts.push(product);
+    }
+    setProducts(newProducts);
+    
+    // Real DB Save
+    await storageService.saveSingleProduct(product);
+    await refreshData(); // Ensure we have the real ID from DB
+    setIsProductModalOpen(false);
+  };
+
+  const handleDeleteProduct = async (id: string) => {
+    if (confirm('Tem certeza que deseja remover este produto?')) {
+      const newProducts = products.filter(p => p.id !== id);
+      setProducts(newProducts);
+      await storageService.deleteProduct(id);
+    }
+  };
+
+  const handleEditNeighborhood = (hood: Neighborhood) => {
+    setEditingNeighborhood(hood.id);
+    setTempFee(hood.deliveryFee.toString());
+  };
+
+  const handleSaveNeighborhood = async (id: string) => {
+    const updatedNeighborhoods = neighborhoods.map(n => {
+      if (n.id === id) {
+        return { ...n, deliveryFee: parseFloat(tempFee) || 0 };
+      }
+      return n;
+    });
+    setNeighborhoods(updatedNeighborhoods);
+    await storageService.saveNeighborhoods(updatedNeighborhoods);
+    setEditingNeighborhood(null);
+  };
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [selectedCategory]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-red-600">
+        <div className="bg-white p-6 rounded-full shadow-xl mb-4">
+          <ShoppingBag size={48} className="animate-pulse" />
+        </div>
+        <div className="flex items-center gap-2">
+           <Loader2 size={24} className="animate-spin" />
+           <span className="font-bold text-lg">Carregando Formento Express...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen pb-24 md:pb-0 relative bg-gray-50 pt-safe">
+      
+      {/* Navbar (Top) - Simplified for Mobile */}
+      <nav className="bg-gray-900 text-white sticky top-0 z-40 shadow-lg pb-safe pt-safe-top md:pt-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            
+            {/* Logo */}
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => {
+              setSelectedCategory('Todos');
+              setIsAdminMode(false);
+            }}>
+              <div className="w-9 h-9 bg-red-600 rounded-lg flex items-center justify-center transform rotate-3 shadow-lg">
+                <ShoppingBag className="text-white" size={20} />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold text-lg leading-tight tracking-tight">FORMENTO</span>
+                <span className="text-[0.65rem] text-red-500 font-bold tracking-[0.2em] uppercase">Express</span>
+              </div>
+            </div>
+
+            {/* Desktop Search */}
+            {!isAdminMode && (
+              <div className="hidden md:flex flex-1 max-w-xl mx-8 relative">
+                <input 
+                  type="text"
+                  placeholder="Busque por produtos, marcas..."
+                  className="w-full bg-gray-800 text-white border-none rounded-full py-2.5 pl-12 pr-4 focus:ring-2 focus:ring-red-600 text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+              </div>
+            )}
+
+            {/* Desktop Actions */}
+            <div className="hidden md:flex items-center gap-4">
+              {user?.role === 'admin' && (
+                <button 
+                  onClick={() => setIsAdminMode(!isAdminMode)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${isAdminMode ? 'bg-red-600 text-white' : 'bg-gray-800 text-gray-300'}`}
+                >
+                  <Settings size={14} />
+                  {isAdminMode ? 'Sair Admin' : 'Painel Admin'}
+                </button>
+              )}
+              {user ? (
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setIsOrderHistoryOpen(true)} className="p-2 hover:bg-gray-800 rounded-full" title="Pedidos">
+                    <Clock size={20} />
+                  </button>
+                  <div className="flex flex-col items-end border-l border-gray-700 pl-3">
+                    <span className="text-sm font-semibold">{user.name.split(' ')[0]}</span>
+                  </div>
+                  <button onClick={handleLogout} className="bg-gray-800 p-2 rounded-full hover:bg-red-900" title="Sair"><LogOut size={18} /></button>
+                </div>
+              ) : (
+                <button onClick={() => setIsAuthOpen(true)} className="flex items-center gap-2 text-sm font-medium hover:text-red-400">
+                  <UserIcon size={20} /> Entrar
+                </button>
+              )}
+               {!isAdminMode && (
+                <button onClick={() => setIsCartOpen(true)} className="relative bg-gray-800 p-2.5 rounded-full hover:bg-gray-700">
+                  <ShoppingBag size={20} />
+                  {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-900">{cartItemCount}</span>}
+                </button>
+              )}
+            </div>
+            
+            {/* Mobile Actions (Right Side) */}
+             <div className="md:hidden flex items-center gap-3">
+               {user?.role === 'admin' && (
+                  <button onClick={() => setIsAdminMode(!isAdminMode)} className="text-gray-300">
+                    <Settings size={22} />
+                  </button>
+               )}
+               {!isAdminMode && (
+                 <button onClick={() => setIsCartOpen(true)} className="relative text-white">
+                    <ShoppingBag size={24} />
+                    {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full border border-gray-900">{cartItemCount}</span>}
+                 </button>
+               )}
+             </div>
+
+          </div>
+        </div>
+
+        {/* Mobile Search Bar */}
+        {!isAdminMode && (
+          <div className="md:hidden px-4 pb-3">
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="Buscar produtos..."
+                className="w-full bg-gray-800 text-white border-none rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-red-600 text-sm placeholder-gray-400"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            </div>
+          </div>
+        )}
+      </nav>
+
+      {/* Category Scroll */}
+      {!isAdminMode && (
+        <div className="bg-white border-b border-gray-200 sticky top-[7rem] md:top-16 z-30 shadow-sm">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex overflow-x-auto py-3 px-4 gap-3 no-scrollbar snap-x">
+              {CATEGORIES.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`snap-start whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 border flex-shrink-0 ${
+                    selectedCategory === category 
+                      ? 'bg-red-600 text-white border-red-600 shadow-md' 
+                      : 'bg-white text-gray-600 border-gray-200'
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        {isAdminMode ? (
+          /* --- ADMIN DASHBOARD --- */
+          <div className="space-y-6">
+            <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
+              <button onClick={() => setActiveAdminTab('products')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'products' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Package size={18} /> Produtos</button>
+              <button onClick={() => setActiveAdminTab('neighborhoods')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'neighborhoods' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Map size={18} /> Bairros</button>
+              <button onClick={() => setActiveAdminTab('users')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'users' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Users size={18} /> Clientes</button>
+            </div>
+            {/* Products Tab */}
+            {activeAdminTab === 'products' && (
+              <>
+                <button onClick={() => { setEditingProduct(undefined); setIsProductModalOpen(true); }} className="w-full bg-red-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg mb-4"><Plus size={20} /> Novo Produto</button>
+                <div className="space-y-3">
+                  {products.map(product => (
+                    <div key={product.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center gap-3">
+                      <img src={product.image} className="w-16 h-16 rounded-lg object-cover bg-gray-200" alt="" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-gray-900 truncate">{product.name}</h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-red-600 font-bold">R$ {product.price.toFixed(2)}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded ${product.stock < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>Est: {product.stock}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                         <button onClick={() => { setEditingProduct(product); setIsProductModalOpen(true); }} className="p-2 text-blue-600 bg-blue-50 rounded-lg"><Edit2 size={18} /></button>
+                         <button onClick={() => handleDeleteProduct(product.id)} className="p-2 text-red-600 bg-red-50 rounded-lg"><Trash2 size={18} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+             {/* Neighborhoods Tab */}
+             {activeAdminTab === 'neighborhoods' && (
+               <div className="space-y-3">
+                  {neighborhoods.map(hood => (
+                    <div key={hood.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                       <span className="font-medium">{hood.name}</span>
+                       <div className="flex items-center gap-2">
+                         {editingNeighborhood === hood.id ? (
+                           <>
+                             <input type="number" className="w-20 border rounded p-1 text-center" value={tempFee} onChange={(e) => setTempFee(e.target.value)} />
+                             <button onClick={() => handleSaveNeighborhood(hood.id)} className="text-green-600"><Save size={20} /></button>
+                           </>
+                         ) : (
+                           <>
+                             <span className="text-gray-600">R$ {hood.deliveryFee.toFixed(2)}</span>
+                             <button onClick={() => handleEditNeighborhood(hood)} className="text-blue-600"><Edit2 size={18} /></button>
+                           </>
+                         )}
+                       </div>
+                    </div>
+                  ))}
+               </div>
+             )}
+             {/* Users Tab */}
+             {activeAdminTab === 'users' && (
+               <div className="space-y-3">
+                 {users.map(u => (
+                    <div key={u.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                       <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-gray-900">{u.name}</span>
+                          {u.role === 'admin' && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">ADMIN</span>}
+                       </div>
+                       <p className="text-sm text-gray-500">{u.email}</p>
+                       <p className="text-xs text-gray-400 mt-2 flex items-center gap-1"><MapPin size={12}/> {u.address ? neighborhoods.find(n => n.id === u.address?.neighborhoodId)?.name : 'Sem endereço'}</p>
+                    </div>
+                 ))}
+               </div>
+             )}
+          </div>
+        ) : (
+          /* --- USER VIEW --- */
+          <>
+            {selectedCategory === 'Todos' && !searchQuery && (
+              <div className="bg-gray-900 rounded-2xl p-6 mb-6 text-white relative overflow-hidden shadow-xl min-h-[160px] flex items-center">
+                <div className="relative z-10 w-2/3">
+                  <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block">OFERTA</span>
+                  <h1 className="text-2xl font-bold mb-2 leading-tight">Churrasco no <br/><span className="text-red-400">Fim de Semana</span></h1>
+                  <button onClick={() => setSelectedCategory('Açougue')} className="bg-white text-gray-900 text-xs px-4 py-2 rounded-full font-bold mt-1">Ver Carnes</button>
+                </div>
+                <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" className="absolute right-0 top-0 h-full w-1/2 object-cover opacity-50 mask-image-linear-gradient" alt="BBQ" />
+              </div>
+            )}
+
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              {selectedCategory === 'Todos' ? 'Produtos' : selectedCategory}
+              <span className="text-xs font-normal text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">{filteredProducts.length}</span>
+            </h2>
+
+            {filteredProducts.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 pb-safe">
+                {filteredProducts.map(product => (
+                  <ProductCard 
+                    key={product.id}
+                    product={product}
+                    cartItem={cart.find(c => c.id === product.id)}
+                    onAdd={addToCart}
+                    onRemove={removeFromCart}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <p className="text-gray-500">Nenhum produto encontrado.</p>
+              </div>
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Mobile Bottom Navigation Bar */}
+      <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around items-center py-3 pb-safe z-40 text-xs font-medium text-gray-500 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button 
+          onClick={() => { setIsCartOpen(false); setIsOrderHistoryOpen(false); setIsAdminMode(false); }}
+          className={`flex flex-col items-center gap-1 ${!isCartOpen && !isOrderHistoryOpen && !isAdminMode ? 'text-red-600' : ''}`}
+        >
+          <Home size={24} strokeWidth={!isCartOpen && !isOrderHistoryOpen ? 2.5 : 2} />
+          <span>Início</span>
+        </button>
+        
+        <button 
+          onClick={() => {
+             if(user) { setIsOrderHistoryOpen(true); setIsCartOpen(false); } 
+             else setIsAuthOpen(true);
+          }}
+          className={`flex flex-col items-center gap-1 ${isOrderHistoryOpen ? 'text-red-600' : ''}`}
+        >
+          <Clock size={24} strokeWidth={isOrderHistoryOpen ? 2.5 : 2} />
+          <span>Pedidos</span>
+        </button>
+
+        <button 
+           onClick={() => setIsChefOpen(true)}
+           className="flex flex-col items-center gap-1 -mt-8"
+        >
+           <div className="bg-gray-900 p-3 rounded-full shadow-lg border-4 border-gray-50 text-white">
+             <Sparkles size={24} className="text-yellow-400" fill="currentColor" />
+           </div>
+           <span className="font-bold text-gray-900">Chef IA</span>
+        </button>
+
+        <button 
+          onClick={() => { setIsCartOpen(true); setIsOrderHistoryOpen(false); }}
+          className={`flex flex-col items-center gap-1 relative ${isCartOpen ? 'text-red-600' : ''}`}
+        >
+          <div className="relative">
+             <ShoppingBag size={24} strokeWidth={isCartOpen ? 2.5 : 2} />
+             {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full">{cartItemCount}</span>}
+          </div>
+          <span>Cesta</span>
+        </button>
+
+        <button 
+           onClick={() => {
+             if (user) { 
+                if (window.confirm('Deseja sair?')) handleLogout();
+             } else {
+                setIsAuthOpen(true);
+             }
+           }}
+           className="flex flex-col items-center gap-1"
+        >
+          {user ? (
+             <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center text-red-700 font-bold text-xs border border-red-200">
+                {user.name.charAt(0)}
+             </div>
+          ) : (
+             <UserIcon size={24} />
+          )}
+          <span>{user ? 'Perfil' : 'Entrar'}</span>
+        </button>
+      </div>
+
+      {/* Cart Sidebar / Bottom Sheet */}
+      {isCartOpen && !isAdminMode && (
+        <div className="fixed inset-0 z-50 overflow-hidden flex items-end md:items-stretch justify-end">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsCartOpen(false)}></div>
+          
+          <div className="relative w-full md:max-w-md h-[85vh] md:h-full bg-white shadow-2xl flex flex-col rounded-t-2xl md:rounded-none animate-slide-up md:animate-none">
+            
+            {/* Cart Handle for Mobile */}
+            <div className="md:hidden w-full flex justify-center pt-3 pb-1" onClick={() => setIsCartOpen(false)}>
+              <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-lg font-bold flex items-center gap-2"><ShoppingBag size={20} /> Seu Carrinho</h2>
+              <button onClick={() => setIsCartOpen(false)} className="text-gray-400 bg-gray-100 rounded-full p-1"><X size={20} /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {cart.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-50">
+                  <ShoppingBag size={48} />
+                  <p>Carrinho vazio</p>
+                </div>
+              ) : (
+                cart.map(item => (
+                  <div key={item.id} className="flex gap-3 bg-white p-2 rounded-lg border border-gray-100">
+                    <img src={item.image} alt="" className="w-16 h-16 object-cover rounded-md bg-gray-100" />
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start">
+                         <h4 className="font-semibold text-sm line-clamp-1">{item.name}</h4>
+                         <span className="font-bold text-sm">R$ {(item.price * item.quantity).toFixed(2)}</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mb-2">R$ {item.price.toFixed(2)} / {item.unit}</p>
+                      
+                      <div className="flex items-center gap-3">
+                         <div className="flex items-center border border-gray-200 rounded-lg">
+                           <button onClick={() => removeFromCart(item.id)} className="px-2 py-1 text-red-600 font-bold">-</button>
+                           <span className="px-2 text-sm font-medium">{item.quantity}</span>
+                           <button onClick={() => addToCart(item)} className="px-2 py-1 text-green-600 font-bold">+</button>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {cart.length > 0 && (
+              <div className="p-4 bg-gray-50 border-t border-gray-200 pb-safe">
+                 {/* Address Mini Summary */}
+                 <div className="bg-white p-3 rounded-xl border border-gray-200 mb-3 text-sm">
+                    <div className="flex items-center gap-2 text-gray-500 mb-2">
+                       <MapPin size={14} /> Entrega
+                    </div>
+                    {user ? (
+                      <div className="flex flex-col gap-2">
+                         <input className="bg-gray-50 border rounded p-2 text-sm w-full" placeholder="Rua" value={deliveryAddress.street} onChange={e => setDeliveryAddress({...deliveryAddress, street: e.target.value})} />
+                         <div className="flex gap-2">
+                           <input className="bg-gray-50 border rounded p-2 text-sm w-20" placeholder="Nº" value={deliveryAddress.number} onChange={e => setDeliveryAddress({...deliveryAddress, number: e.target.value})} />
+                           <select className="bg-gray-50 border rounded p-2 text-sm flex-1" value={deliveryAddress.neighborhoodId} onChange={e => setDeliveryAddress({...deliveryAddress, neighborhoodId: e.target.value})}>
+                              {neighborhoods.map(n => <option key={n.id} value={n.id}>{n.name} (+R${n.deliveryFee})</option>)}
+                           </select>
+                         </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => setIsAuthOpen(true)} className="text-red-600 font-bold text-xs underline">Faça login para definir endereço</button>
+                    )}
+                 </div>
+
+                 <div className="flex justify-between text-lg font-bold mb-3">
+                    <span>Total</span>
+                    <span>R$ {finalTotal.toFixed(2)}</span>
+                 </div>
+                 <button onClick={handleInitiateCheckout} className="w-full bg-red-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-200">
+                    Ir para Pagamento
+                 </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      <AIChef cartItems={cart} isOpen={isChefOpen} onClose={() => setIsChefOpen(false)} />
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} onLoginSuccess={handleLogin} />
+      <AdminProductModal 
+        isOpen={isProductModalOpen} 
+        onClose={() => setIsProductModalOpen(false)} 
+        onSave={handleSaveProduct}
+        initialData={editingProduct}
+      />
+      
+      {user && (
+        <>
+          <CheckoutModal 
+            isOpen={isCheckoutOpen} 
+            onClose={() => setIsCheckoutOpen(false)}
+            cart={cart}
+            user={user}
+            total={finalTotal}
+            deliveryFee={deliveryFee}
+            address={deliveryAddress}
+            neighborhoods={neighborhoods}
+            onSuccess={handleCheckoutSuccess}
+          />
+          <OrderHistoryModal 
+            isOpen={isOrderHistoryOpen}
+            onClose={() => setIsOrderHistoryOpen(false)}
+            orders={userOrders}
+          />
+        </>
+      )}
+
+    </div>
+  );
+};
+
+export default App;
