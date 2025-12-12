@@ -30,7 +30,8 @@ import {
   DollarSign, // Vendas
   Image as ImageIcon, // Banners
   TrendingUp,
-  Receipt
+  Receipt,
+  ChefHat
 } from 'lucide-react';
 import { Product, CartItem, Category, User, Neighborhood, Order, Banner } from './types';
 import { CATEGORIES } from './constants';
@@ -479,6 +480,17 @@ const App: React.FC = () => {
 
             {/* Desktop Actions */}
             <div className="hidden md:flex items-center gap-4">
+              {/* Chef IA Button (Desktop) */}
+              {!isAdminMode && (
+                <button
+                  onClick={() => setIsChefOpen(true)}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-full font-bold transition-all shadow-md active:scale-95"
+                >
+                  <Sparkles size={16} className="text-yellow-300 fill-yellow-300" />
+                  <span className="text-sm">Chef IA</span>
+                </button>
+              )}
+
               {user?.role === 'admin' && (
                 <button 
                   onClick={() => setIsAdminMode(!isAdminMode)}
@@ -810,15 +822,17 @@ const App: React.FC = () => {
           <span>Pedidos</span>
         </button>
 
-        <button 
-           onClick={() => setIsChefOpen(true)}
-           className="flex flex-col items-center gap-1 -mt-8"
-        >
-           <div className="bg-gray-900 p-3 rounded-full shadow-lg border-4 border-gray-50 text-white transform transition-transform active:scale-95">
-             <Sparkles size={24} className="text-yellow-400" fill="currentColor" />
-           </div>
-           <span className="font-bold text-gray-900">Chef IA</span>
-        </button>
+        {!isAdminMode && (
+          <button 
+             onClick={() => setIsChefOpen(true)}
+             className="flex flex-col items-center gap-1 -mt-8"
+          >
+             <div className="bg-gray-900 p-3 rounded-full shadow-lg border-4 border-gray-50 text-white transform transition-transform active:scale-95">
+               <Sparkles size={24} className="text-yellow-400 fill-current" />
+             </div>
+             <span className="font-bold text-gray-900">Chef IA</span>
+          </button>
+        )}
 
         <button 
           onClick={() => { setIsCartOpen(true); setIsOrderHistoryOpen(false); }}
