@@ -1,16 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShoppingBag, 
-  MapPin, 
   Search, 
-  ChevronRight, 
-  Bike, 
-  Store, 
-  Sparkles,
-  ArrowRight,
-  X,
-  User as UserIcon,
-  LogOut,
   Settings,
   Plus,
   Edit2,
@@ -21,7 +12,20 @@ import {
   Save,
   Clock,
   Home,
-  Loader2
+  Loader2,
+  CheckCircle,
+  AlertTriangle,
+  LogOut,
+  User as UserIcon,
+  X,
+  MapPin,
+  Carrot,     // Hortifruti
+  Beef,       // Açougue
+  Beer,       // Bebidas
+  ShoppingBasket, // Mercearia
+  Croissant,  // Padaria
+  Sparkles,   // Limpeza
+  LayoutGrid  // Todos
 } from 'lucide-react';
 import { Product, CartItem, Category, User, Neighborhood, Order } from './types';
 import { CATEGORIES } from './constants';
@@ -33,6 +37,53 @@ import { CheckoutModal } from './components/CheckoutModal';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
 import { storageService } from './services/storageService';
 
+// --- Toast Component ---
+interface ToastProps {
+  message: string;
+  type: 'success' | 'error' | 'info';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const bgColors = {
+    success: 'bg-green-600',
+    error: 'bg-red-600',
+    info: 'bg-gray-800'
+  };
+
+  const icons = {
+    success: <CheckCircle size={20} />,
+    error: <AlertTriangle size={20} />,
+    info: <ShoppingBag size={20} />
+  };
+
+  return (
+    <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-full shadow-lg text-white ${bgColors[type]} animate-toast min-w-[300px] max-w-[90vw]`}>
+      {icons[type]}
+      <span className="font-medium text-sm flex-1">{message}</span>
+      <button onClick={onClose}><X size={16} className="opacity-80" /></button>
+    </div>
+  );
+};
+
+// --- Category Icon Helper ---
+const getCategoryIcon = (category: string) => {
+  switch(category) {
+    case 'Hortifruti': return <Carrot size={20} />;
+    case 'Açougue': return <Beef size={20} />;
+    case 'Bebidas': return <Beer size={20} />;
+    case 'Mercearia': return <ShoppingBasket size={20} />;
+    case 'Padaria': return <Croissant size={20} />;
+    case 'Limpeza': return <Sparkles size={20} />;
+    default: return <LayoutGrid size={20} />;
+  }
+};
+
 const App: React.FC = () => {
   // Global Data State
   const [products, setProducts] = useState<Product[]>([]);
@@ -43,8 +94,6 @@ const App: React.FC = () => {
 
   // UI State
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
   const [selectedCategory, setSelectedCategory] = useState<Category>('Todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -54,6 +103,7 @@ const App: React.FC = () => {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false); 
+  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
   
   // Admin State
   const [activeAdminTab, setActiveAdminTab] = useState<'products' | 'neighborhoods' | 'users'>('products');
@@ -70,8 +120,18 @@ const App: React.FC = () => {
     neighborhoodId: 'cordeiros'
   });
 
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ msg, type });
+  };
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Bom dia';
+    if (hour < 18) return 'Boa tarde';
+    return 'Boa noite';
+  };
+
   const refreshData = async () => {
-    setIsRefreshing(true);
     const [loadedProducts, loadedNeighborhoods] = await Promise.all([
       storageService.getProducts(),
       storageService.getNeighborhoods()
@@ -89,7 +149,6 @@ const App: React.FC = () => {
          setUserOrders(allOrders.filter(o => o.userId === user.id));
       }
     }
-    setIsRefreshing(false);
   };
 
   // Load Data on Mount (Async)
@@ -128,6 +187,7 @@ const App: React.FC = () => {
         }
       } catch (error) {
         console.error("Failed to load data", error);
+        showToast("Erro ao carregar dados. Verifique sua conexão.", "error");
       } finally {
         setIsLoading(false);
       }
@@ -148,6 +208,7 @@ const App: React.FC = () => {
     }
     
     await refreshData();
+    showToast(`Bem-vindo, ${loggedInUser.name.split(' ')[0]}!`);
 
     if (loggedInUser.role === 'admin') {
       setIsAdminMode(true);
@@ -160,6 +221,7 @@ const App: React.FC = () => {
     setIsAdminMode(false);
     setCart([]);
     setUserOrders([]);
+    showToast("Você saiu da conta.", "info");
   };
 
   const filteredProducts = useMemo(() => {
@@ -187,12 +249,17 @@ const App: React.FC = () => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
-        if (existing.quantity >= product.stock) return prev; 
+        if (existing.quantity >= product.stock) {
+           showToast(`Estoque máximo atingido para ${product.name}`, "error");
+           return prev; 
+        }
+        showToast(`+1 ${product.name} adicionado!`, "success");
         return prev.map(item => 
           item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
       if (product.stock <= 0) return prev;
+      showToast(`${product.name} adicionado à cesta!`, "success");
       return [...prev, { ...product, quantity: 1 }];
     });
   };
@@ -213,11 +280,12 @@ const App: React.FC = () => {
     if (!user) {
       setIsCartOpen(false);
       setIsAuthOpen(true);
+      showToast("Faça login para continuar.", "info");
       return;
     }
 
     if (!deliveryAddress.street || !deliveryAddress.number) {
-      alert("Por favor, preencha o endereço de entrega.");
+      showToast("Preencha o endereço de entrega.", "error");
       return;
     }
 
@@ -225,7 +293,7 @@ const App: React.FC = () => {
     for (const item of cart) {
       const product = products.find(p => p.id === item.id);
       if (!product || product.stock < item.quantity) {
-        alert(`O produto ${item.name} não tem estoque suficiente.`);
+        showToast(`O produto ${item.name} não tem estoque suficiente.`, "error");
         return;
       }
     }
@@ -251,20 +319,17 @@ const App: React.FC = () => {
     });
 
     setProducts(updatedProducts);
-    
-    // In real scenario we would call a batch update or order creation that handles stock decrement server side
-    // For now we just refresh
     await refreshData();
 
     setCart([]);
     setIsCartOpen(false);
     setIsCheckoutOpen(false);
     setIsOrderHistoryOpen(true); 
+    showToast("Pedido realizado com sucesso!", "success");
   };
 
   // Admin Handlers
   const handleSaveProduct = async (product: Product) => {
-    // Optimistic UI
     let newProducts = [...products];
     const index = newProducts.findIndex(p => p.id === product.id);
     if (index >= 0) {
@@ -274,10 +339,10 @@ const App: React.FC = () => {
     }
     setProducts(newProducts);
     
-    // Real DB Save
     await storageService.saveSingleProduct(product);
-    await refreshData(); // Ensure we have the real ID from DB
+    await refreshData();
     setIsProductModalOpen(false);
+    showToast("Produto salvo!", "success");
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -285,6 +350,7 @@ const App: React.FC = () => {
       const newProducts = products.filter(p => p.id !== id);
       setProducts(newProducts);
       await storageService.deleteProduct(id);
+      showToast("Produto removido.", "info");
     }
   };
 
@@ -303,6 +369,7 @@ const App: React.FC = () => {
     setNeighborhoods(updatedNeighborhoods);
     await storageService.saveNeighborhoods(updatedNeighborhoods);
     setEditingNeighborhood(null);
+    showToast("Taxa de entrega atualizada!", "success");
   };
 
   useEffect(() => {
@@ -326,8 +393,11 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-24 md:pb-0 relative bg-gray-50 pt-safe">
       
-      {/* Navbar (Top) - Simplified for Mobile */}
-      <nav className="bg-gray-900 text-white sticky top-0 z-40 shadow-lg pb-safe pt-safe-top md:pt-0">
+      {/* Toast Notification */}
+      {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
+      {/* Navbar (Top) */}
+      <nav className="bg-gray-900 text-white sticky top-0 z-40 shadow-lg pb-safe pt-safe-top md:pt-0 transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             
@@ -351,7 +421,7 @@ const App: React.FC = () => {
                 <input 
                   type="text"
                   placeholder="Busque por produtos, marcas..."
-                  className="w-full bg-gray-800 text-white border-none rounded-full py-2.5 pl-12 pr-4 focus:ring-2 focus:ring-red-600 text-sm"
+                  className="w-full bg-gray-800 text-white border-none rounded-full py-2.5 pl-12 pr-4 focus:ring-2 focus:ring-red-600 text-sm transition-all"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -376,7 +446,7 @@ const App: React.FC = () => {
                     <Clock size={20} />
                   </button>
                   <div className="flex flex-col items-end border-l border-gray-700 pl-3">
-                    <span className="text-sm font-semibold">{user.name.split(' ')[0]}</span>
+                    <span className="text-sm font-semibold">{getGreeting()}, {user.name.split(' ')[0]}</span>
                   </div>
                   <button onClick={handleLogout} className="bg-gray-800 p-2 rounded-full hover:bg-red-900" title="Sair"><LogOut size={18} /></button>
                 </div>
@@ -386,9 +456,9 @@ const App: React.FC = () => {
                 </button>
               )}
                {!isAdminMode && (
-                <button onClick={() => setIsCartOpen(true)} className="relative bg-gray-800 p-2.5 rounded-full hover:bg-gray-700">
+                <button onClick={() => setIsCartOpen(true)} className="relative bg-gray-800 p-2.5 rounded-full hover:bg-gray-700 transition-transform active:scale-95">
                   <ShoppingBag size={20} />
-                  {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-900">{cartItemCount}</span>}
+                  {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-900 animate-bounce">{cartItemCount}</span>}
                 </button>
               )}
             </div>
@@ -418,7 +488,7 @@ const App: React.FC = () => {
               <input 
                 type="text"
                 placeholder="Buscar produtos..."
-                className="w-full bg-gray-800 text-white border-none rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-red-600 text-sm placeholder-gray-400"
+                className="w-full bg-gray-800 text-white border-none rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-red-600 text-sm placeholder-gray-400 shadow-inner"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -428,22 +498,29 @@ const App: React.FC = () => {
         )}
       </nav>
 
-      {/* Category Scroll */}
+      {/* Category Scroll with Icons */}
       {!isAdminMode && (
         <div className="bg-white border-b border-gray-200 sticky top-[7rem] md:top-16 z-30 shadow-sm">
           <div className="max-w-7xl mx-auto">
-            <div className="flex overflow-x-auto py-3 px-4 gap-3 no-scrollbar snap-x">
+            <div className="flex overflow-x-auto py-4 px-4 gap-4 no-scrollbar snap-x">
               {CATEGORIES.map((category) => (
                 <button
                   key={category}
                   onClick={() => setSelectedCategory(category)}
-                  className={`snap-start whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 border flex-shrink-0 ${
-                    selectedCategory === category 
-                      ? 'bg-red-600 text-white border-red-600 shadow-md' 
-                      : 'bg-white text-gray-600 border-gray-200'
-                  }`}
+                  className={`snap-start flex flex-col items-center gap-2 min-w-[70px] transition-all duration-200 group`}
                 >
-                  {category}
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-sm transition-all duration-300 ${
+                    selectedCategory === category 
+                      ? 'bg-red-600 text-white shadow-red-200 shadow-lg scale-110' 
+                      : 'bg-gray-100 text-gray-500 group-hover:bg-gray-200'
+                  }`}>
+                    {getCategoryIcon(category)}
+                  </div>
+                  <span className={`text-xs font-medium ${
+                    selectedCategory === category ? 'text-red-600 font-bold' : 'text-gray-600'
+                  }`}>
+                    {category}
+                  </span>
                 </button>
               ))}
             </div>
@@ -456,7 +533,7 @@ const App: React.FC = () => {
         
         {isAdminMode ? (
           /* --- ADMIN DASHBOARD --- */
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in-up">
             <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
               <button onClick={() => setActiveAdminTab('products')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'products' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Package size={18} /> Produtos</button>
               <button onClick={() => setActiveAdminTab('neighborhoods')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'neighborhoods' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Map size={18} /> Bairros</button>
@@ -529,18 +606,21 @@ const App: React.FC = () => {
           /* --- USER VIEW --- */
           <>
             {selectedCategory === 'Todos' && !searchQuery && (
-              <div className="bg-gray-900 rounded-2xl p-6 mb-6 text-white relative overflow-hidden shadow-xl min-h-[160px] flex items-center">
-                <div className="relative z-10 w-2/3">
-                  <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block">OFERTA</span>
-                  <h1 className="text-2xl font-bold mb-2 leading-tight">Churrasco no <br/><span className="text-red-400">Fim de Semana</span></h1>
-                  <button onClick={() => setSelectedCategory('Açougue')} className="bg-white text-gray-900 text-xs px-4 py-2 rounded-full font-bold mt-1">Ver Carnes</button>
+               <div className="mb-6">
+                 {user && <h3 className="text-lg font-bold text-gray-800 mb-4">{getGreeting()}, {user.name.split(' ')[0]}! 👋</h3>}
+                <div className="bg-gray-900 rounded-2xl p-6 text-white relative overflow-hidden shadow-xl min-h-[160px] flex items-center transform transition-transform hover:scale-[1.01]">
+                  <div className="relative z-10 w-2/3">
+                    <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block shadow-sm">OFERTA RELÂMPAGO</span>
+                    <h1 className="text-2xl font-bold mb-2 leading-tight">Churrasco no <br/><span className="text-red-400">Fim de Semana</span></h1>
+                    <button onClick={() => setSelectedCategory('Açougue')} className="bg-white text-gray-900 text-xs px-4 py-2 rounded-full font-bold mt-1 hover:bg-gray-100 transition-colors">Ver Carnes</button>
+                  </div>
+                  <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" className="absolute right-0 top-0 h-full w-1/2 object-cover opacity-50 mask-image-linear-gradient" alt="BBQ" />
                 </div>
-                <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" className="absolute right-0 top-0 h-full w-1/2 object-cover opacity-50 mask-image-linear-gradient" alt="BBQ" />
               </div>
             )}
 
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              {selectedCategory === 'Todos' ? 'Produtos' : selectedCategory}
+              {selectedCategory === 'Todos' ? 'Destaques' : selectedCategory}
               <span className="text-xs font-normal text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">{filteredProducts.length}</span>
             </h2>
 
@@ -569,7 +649,7 @@ const App: React.FC = () => {
       <div className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 flex justify-around items-center py-3 pb-safe z-40 text-xs font-medium text-gray-500 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button 
           onClick={() => { setIsCartOpen(false); setIsOrderHistoryOpen(false); setIsAdminMode(false); }}
-          className={`flex flex-col items-center gap-1 ${!isCartOpen && !isOrderHistoryOpen && !isAdminMode ? 'text-red-600' : ''}`}
+          className={`flex flex-col items-center gap-1 transition-colors ${!isCartOpen && !isOrderHistoryOpen && !isAdminMode ? 'text-red-600' : ''}`}
         >
           <Home size={24} strokeWidth={!isCartOpen && !isOrderHistoryOpen ? 2.5 : 2} />
           <span>Início</span>
@@ -578,9 +658,9 @@ const App: React.FC = () => {
         <button 
           onClick={() => {
              if(user) { setIsOrderHistoryOpen(true); setIsCartOpen(false); } 
-             else setIsAuthOpen(true);
+             else { setIsAuthOpen(true); showToast("Faça login para ver seus pedidos", "info"); }
           }}
-          className={`flex flex-col items-center gap-1 ${isOrderHistoryOpen ? 'text-red-600' : ''}`}
+          className={`flex flex-col items-center gap-1 transition-colors ${isOrderHistoryOpen ? 'text-red-600' : ''}`}
         >
           <Clock size={24} strokeWidth={isOrderHistoryOpen ? 2.5 : 2} />
           <span>Pedidos</span>
@@ -590,7 +670,7 @@ const App: React.FC = () => {
            onClick={() => setIsChefOpen(true)}
            className="flex flex-col items-center gap-1 -mt-8"
         >
-           <div className="bg-gray-900 p-3 rounded-full shadow-lg border-4 border-gray-50 text-white">
+           <div className="bg-gray-900 p-3 rounded-full shadow-lg border-4 border-gray-50 text-white transform transition-transform active:scale-95">
              <Sparkles size={24} className="text-yellow-400" fill="currentColor" />
            </div>
            <span className="font-bold text-gray-900">Chef IA</span>
@@ -598,11 +678,11 @@ const App: React.FC = () => {
 
         <button 
           onClick={() => { setIsCartOpen(true); setIsOrderHistoryOpen(false); }}
-          className={`flex flex-col items-center gap-1 relative ${isCartOpen ? 'text-red-600' : ''}`}
+          className={`flex flex-col items-center gap-1 relative transition-colors ${isCartOpen ? 'text-red-600' : ''}`}
         >
           <div className="relative">
              <ShoppingBag size={24} strokeWidth={isCartOpen ? 2.5 : 2} />
-             {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full">{cartItemCount}</span>}
+             {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full border-2 border-gray-900 animate-bounce">{cartItemCount}</span>}
           </div>
           <span>Cesta</span>
         </button>
@@ -642,7 +722,7 @@ const App: React.FC = () => {
 
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-lg font-bold flex items-center gap-2"><ShoppingBag size={20} /> Seu Carrinho</h2>
-              <button onClick={() => setIsCartOpen(false)} className="text-gray-400 bg-gray-100 rounded-full p-1"><X size={20} /></button>
+              <button onClick={() => setIsCartOpen(false)} className="text-gray-400 bg-gray-100 rounded-full p-1 hover:bg-gray-200 transition-colors"><X size={20} /></button>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -653,7 +733,7 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 cart.map(item => (
-                  <div key={item.id} className="flex gap-3 bg-white p-2 rounded-lg border border-gray-100">
+                  <div key={item.id} className="flex gap-3 bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
                     <img src={item.image} alt="" className="w-16 h-16 object-cover rounded-md bg-gray-100" />
                     <div className="flex-1">
                       <div className="flex justify-between items-start">
@@ -664,9 +744,9 @@ const App: React.FC = () => {
                       
                       <div className="flex items-center gap-3">
                          <div className="flex items-center border border-gray-200 rounded-lg">
-                           <button onClick={() => removeFromCart(item.id)} className="px-2 py-1 text-red-600 font-bold">-</button>
+                           <button onClick={() => removeFromCart(item.id)} className="px-2 py-1 text-red-600 font-bold active:bg-gray-100 rounded-l-lg">-</button>
                            <span className="px-2 text-sm font-medium">{item.quantity}</span>
-                           <button onClick={() => addToCart(item)} className="px-2 py-1 text-green-600 font-bold">+</button>
+                           <button onClick={() => addToCart(item)} className="px-2 py-1 text-green-600 font-bold active:bg-gray-100 rounded-r-lg">+</button>
                          </div>
                       </div>
                     </div>
@@ -678,7 +758,7 @@ const App: React.FC = () => {
             {cart.length > 0 && (
               <div className="p-4 bg-gray-50 border-t border-gray-200 pb-safe">
                  {/* Address Mini Summary */}
-                 <div className="bg-white p-3 rounded-xl border border-gray-200 mb-3 text-sm">
+                 <div className="bg-white p-3 rounded-xl border border-gray-200 mb-3 text-sm shadow-sm">
                     <div className="flex items-center gap-2 text-gray-500 mb-2">
                        <MapPin size={14} /> Entrega
                     </div>
@@ -701,7 +781,7 @@ const App: React.FC = () => {
                     <span>Total</span>
                     <span>R$ {finalTotal.toFixed(2)}</span>
                  </div>
-                 <button onClick={handleInitiateCheckout} className="w-full bg-red-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-200">
+                 <button onClick={handleInitiateCheckout} className="w-full bg-red-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
                     Ir para Pagamento
                  </button>
               </div>
