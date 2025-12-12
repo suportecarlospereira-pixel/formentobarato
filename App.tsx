@@ -31,7 +31,8 @@ import {
   Image as ImageIcon, // Banners
   TrendingUp,
   Receipt,
-  ChefHat
+  ChefHat,
+  Phone
 } from 'lucide-react';
 import { Product, CartItem, Category, User, Neighborhood, Order, Banner } from './types';
 import { CATEGORIES } from './constants';
@@ -151,6 +152,7 @@ const App: React.FC = () => {
     setNeighborhoods(loadedNeighborhoods);
     setBanners(loadedBanners);
     
+    // Always refresh orders if user is present
     if (user) {
       const allOrders = await storageService.getOrders();
       if (user.role === 'admin') {
@@ -257,12 +259,15 @@ const App: React.FC = () => {
   // Admin Stats
   const adminStats = useMemo(() => {
     if (!userOrders.length) return { revenue: 0, count: 0, average: 0 };
-    const revenue = userOrders.reduce((acc, order) => acc + order.total + order.deliveryFee, 0);
-    const count = userOrders.length;
+    // Only count non-cancelled orders for revenue? Let's count all non-cancelled for now.
+    const validOrders = userOrders.filter(o => o.status !== 'cancelled');
+    
+    const revenue = validOrders.reduce((acc, order) => acc + order.total + order.deliveryFee, 0);
+    const count = validOrders.length;
     return {
       revenue,
       count,
-      average: revenue / count
+      average: count > 0 ? revenue / count : 0
     };
   }, [userOrders]);
 
@@ -345,7 +350,7 @@ const App: React.FC = () => {
     });
 
     setProducts(updatedProducts);
-    await refreshData();
+    await refreshData(); // This will reload orders too
 
     setCart([]);
     setIsCartOpen(false);
@@ -420,6 +425,12 @@ const App: React.FC = () => {
     setUserOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
     showToast(`Status atualizado para ${status}`, "success");
   };
+
+  // Force Refresh for Admin
+  const handleAdminRefresh = async () => {
+    await refreshData();
+    showToast("Dados atualizados!", "info");
+  }
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -596,7 +607,7 @@ const App: React.FC = () => {
           <div className="space-y-6 animate-fade-in-up">
             <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
               <button onClick={() => setActiveAdminTab('products')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'products' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Package size={18} /> Produtos</button>
-              <button onClick={() => setActiveAdminTab('sales')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'sales' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><DollarSign size={18} /> Vendas</button>
+              <button onClick={() => setActiveAdminTab('sales')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'sales' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><DollarSign size={18} /> Vendas (Pedidos)</button>
               <button onClick={() => setActiveAdminTab('banners')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'banners' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><ImageIcon size={18} /> Banners</button>
               <button onClick={() => setActiveAdminTab('neighborhoods')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'neighborhoods' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Map size={18} /> Bairros</button>
               <button onClick={() => setActiveAdminTab('users')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'users' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Users size={18} /> Clientes</button>
@@ -630,14 +641,20 @@ const App: React.FC = () => {
             {/* Sales Dashboard Tab */}
             {activeAdminTab === 'sales' && (
               <div className="space-y-6">
+                 {/* Header with refresh */}
+                 <div className="flex justify-between items-center">
+                    <h3 className="font-bold text-gray-700">Dashboard Financeiro</h3>
+                    <button onClick={handleAdminRefresh} className="text-xs bg-gray-200 px-3 py-1 rounded hover:bg-gray-300">Atualizar Lista</button>
+                 </div>
+
                 {/* Stats Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-2 opacity-80"><DollarSign size={18}/> Faturamento</div>
+                    <div className="flex items-center gap-2 mb-2 opacity-80"><DollarSign size={18}/> Faturamento (Válido)</div>
                     <div className="text-2xl font-bold">R$ {adminStats.revenue.toFixed(2)}</div>
                   </div>
                   <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
-                    <div className="flex items-center gap-2 mb-2 opacity-80"><Receipt size={18}/> Pedidos</div>
+                    <div className="flex items-center gap-2 mb-2 opacity-80"><Receipt size={18}/> Pedidos Ativos</div>
                     <div className="text-2xl font-bold">{adminStats.count}</div>
                   </div>
                   <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg col-span-2 md:col-span-1">
@@ -648,26 +665,62 @@ const App: React.FC = () => {
 
                 {/* Orders List */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 font-bold text-gray-800">Histórico de Pedidos</div>
+                  <div className="p-4 border-b border-gray-100 font-bold text-gray-800 flex justify-between">
+                     <span>Histórico de Pedidos</span>
+                     <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded">{userOrders.length} total</span>
+                  </div>
                   <div className="divide-y divide-gray-100">
                     {userOrders.length === 0 ? (
                       <div className="p-8 text-center text-gray-500">Nenhuma venda registrada ainda.</div>
                     ) : (
                       userOrders.map(order => (
-                        <div key={order.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50 transition-colors">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono text-xs text-gray-400">#{order.id}</span>
-                              <span className="text-sm font-bold text-gray-900">{order.userName}</span>
-                            </div>
-                            <div className="text-xs text-gray-500 flex flex-col md:flex-row gap-1 md:gap-4">
-                              <span>{new Date(order.date).toLocaleString()}</span>
-                              <span>{order.paymentMethod === 'pix' ? 'PIX' : order.paymentMethod === 'credit_card' ? 'Cartão' : 'Dinheiro'}</span>
-                            </div>
-                            <div className="mt-1 font-medium text-red-600">R$ {(order.total + order.deliveryFee).toFixed(2)}</div>
+                        <div key={order.id} className="p-4 flex flex-col gap-3 hover:bg-gray-50 transition-colors">
+                          {/* Order Header */}
+                          <div className="flex justify-between items-start">
+                             <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-mono text-xs text-gray-400 bg-gray-100 px-1 rounded">#{order.id}</span>
+                                  <span className="text-sm font-bold text-gray-900">{order.userName}</span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {new Date(order.date).toLocaleString()} • {order.paymentMethod === 'pix' ? 'PIX' : order.paymentMethod === 'credit_card' ? 'Cartão' : 'Dinheiro'}
+                                </div>
+                             </div>
+                             <div className="text-right">
+                                <div className="font-bold text-red-600">R$ {(order.total + order.deliveryFee).toFixed(2)}</div>
+                             </div>
                           </div>
                           
-                          <div className="flex items-center gap-3">
+                          {/* Address & Contact */}
+                          <div className="bg-gray-50 p-3 rounded-lg text-xs space-y-2">
+                             <div className="flex items-start gap-2">
+                                <MapPin size={14} className="mt-0.5 text-gray-400" />
+                                <span className="text-gray-600">{order.address}</span>
+                             </div>
+                             {order.userPhone && (
+                               <div className="flex items-center gap-2">
+                                  <Phone size={14} className="text-green-600" />
+                                  <span className="font-bold text-gray-700">{order.userPhone}</span>
+                                  <a 
+                                    href={`https://wa.me/55${order.userPhone.replace(/\D/g, '')}`} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200 hover:bg-green-200 transition-colors"
+                                  >
+                                    Abrir WhatsApp
+                                  </a>
+                               </div>
+                             )}
+                          </div>
+
+                          {/* Items Summary (Collapsed) */}
+                          <div className="text-xs text-gray-500 border-l-2 border-gray-200 pl-2">
+                             {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ').substring(0, 100)}...
+                          </div>
+                          
+                          {/* Actions */}
+                          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                             <span className="text-xs font-semibold text-gray-500">Alterar Status:</span>
                              <select 
                                value={order.status} 
                                onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value as Order['status'])}
@@ -675,13 +728,14 @@ const App: React.FC = () => {
                                  order.status === 'completed' ? 'bg-green-100 text-green-700' :
                                  order.status === 'delivering' ? 'bg-blue-100 text-blue-700' :
                                  order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                                 'bg-yellow-100 text-yellow-700'
+                                 order.status === 'preparing' ? 'bg-yellow-100 text-yellow-700' :
+                                 'bg-gray-100 text-gray-700'
                                }`}
                              >
                                <option value="pending">Pendente</option>
                                <option value="preparing">Preparando</option>
-                               <option value="delivering">Em Entrega</option>
-                               <option value="completed">Concluído</option>
+                               <option value="delivering">Saiu para Entrega</option>
+                               <option value="completed">Entregue (Concluído)</option>
                                <option value="cancelled">Cancelado</option>
                              </select>
                           </div>
@@ -753,6 +807,7 @@ const App: React.FC = () => {
                           {u.role === 'admin' && <span className="bg-red-100 text-red-600 text-[10px] px-1.5 py-0.5 rounded font-bold">ADMIN</span>}
                        </div>
                        <p className="text-sm text-gray-500">{u.email}</p>
+                       {u.phone && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Phone size={12}/> {u.phone}</p>}
                        <p className="text-xs text-gray-400 mt-2 flex items-center gap-1"><MapPin size={12}/> {u.address ? neighborhoods.find(n => n.id === u.address?.neighborhoodId)?.name : 'Sem endereço'}</p>
                     </div>
                  ))}
@@ -840,7 +895,7 @@ const App: React.FC = () => {
         >
           <div className="relative">
              <ShoppingBag size={24} strokeWidth={isCartOpen ? 2.5 : 2} />
-             {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 flex items-center justify-center rounded-full border-2 border-gray-900 animate-bounce">{cartItemCount}</span>}
+             {cartItemCount > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-gray-900 animate-bounce">{cartItemCount}</span>}
           </div>
           <span>Cesta</span>
         </button>

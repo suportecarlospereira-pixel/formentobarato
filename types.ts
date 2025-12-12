@@ -50,6 +50,7 @@ export interface User {
   email: string;
   password?: string;
   role: 'admin' | 'customer';
+  phone?: string; // Contact phone
   address?: {
     street: string;
     number: string;
@@ -64,6 +65,7 @@ export interface Order {
   id: string;
   userId: string;
   userName: string;
+  userPhone?: string; // Snapshot of phone at order time
   date: string;
   items: CartItem[];
   total: number;
