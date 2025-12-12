@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ShoppingBag, 
@@ -25,16 +26,22 @@ import {
   ShoppingBasket, // Mercearia
   Croissant,  // Padaria
   Sparkles,   // Limpeza
-  LayoutGrid  // Todos
+  LayoutGrid,  // Todos
+  DollarSign, // Vendas
+  Image as ImageIcon, // Banners
+  TrendingUp,
+  Receipt
 } from 'lucide-react';
-import { Product, CartItem, Category, User, Neighborhood, Order } from './types';
+import { Product, CartItem, Category, User, Neighborhood, Order, Banner } from './types';
 import { CATEGORIES } from './constants';
 import { ProductCard } from './components/ProductCard';
 import { AIChef } from './components/AIChef';
 import { AuthModal } from './components/AuthModal';
 import { AdminProductModal } from './components/AdminProductModal';
+import { AdminBannerModal } from './components/AdminBannerModal';
 import { CheckoutModal } from './components/CheckoutModal';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
+import { HeroCarousel } from './components/HeroCarousel';
 import { storageService } from './services/storageService';
 
 // --- Toast Component ---
@@ -91,10 +98,11 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [userOrders, setUserOrders] = useState<Order[]>([]);
+  const [banners, setBanners] = useState<Banner[]>([]);
 
   // UI State
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<Category>('Todos');
+  const [selectedCategory, setSelectedCategory] = useState<Category | string>('Todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -106,8 +114,9 @@ const App: React.FC = () => {
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
   
   // Admin State
-  const [activeAdminTab, setActiveAdminTab] = useState<'products' | 'neighborhoods' | 'users'>('products');
+  const [activeAdminTab, setActiveAdminTab] = useState<'products' | 'neighborhoods' | 'users' | 'banners' | 'sales'>('products');
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [editingNeighborhood, setEditingNeighborhood] = useState<string | null>(null);
   const [tempFee, setTempFee] = useState<string>('');
@@ -132,12 +141,14 @@ const App: React.FC = () => {
   };
 
   const refreshData = async () => {
-    const [loadedProducts, loadedNeighborhoods] = await Promise.all([
+    const [loadedProducts, loadedNeighborhoods, loadedBanners] = await Promise.all([
       storageService.getProducts(),
-      storageService.getNeighborhoods()
+      storageService.getNeighborhoods(),
+      storageService.getBanners()
     ]);
     setProducts(loadedProducts);
     setNeighborhoods(loadedNeighborhoods);
+    setBanners(loadedBanners);
     
     if (user) {
       const allOrders = await storageService.getOrders();
@@ -156,13 +167,15 @@ const App: React.FC = () => {
     const loadInitialData = async () => {
       setIsLoading(true);
       try {
-        const [loadedProducts, loadedNeighborhoods] = await Promise.all([
+        const [loadedProducts, loadedNeighborhoods, loadedBanners] = await Promise.all([
           storageService.getProducts(),
-          storageService.getNeighborhoods()
+          storageService.getNeighborhoods(),
+          storageService.getBanners()
         ]);
         
         setProducts(loadedProducts);
         setNeighborhoods(loadedNeighborhoods);
+        setBanners(loadedBanners);
         
         const currentUser = storageService.getCurrentUser();
         setUser(currentUser);
@@ -239,6 +252,18 @@ const App: React.FC = () => {
   const cartItemCount = useMemo(() => {
     return cart.reduce((count, item) => count + item.quantity, 0);
   }, [cart]);
+
+  // Admin Stats
+  const adminStats = useMemo(() => {
+    if (!userOrders.length) return { revenue: 0, count: 0, average: 0 };
+    const revenue = userOrders.reduce((acc, order) => acc + order.total + order.deliveryFee, 0);
+    const count = userOrders.length;
+    return {
+      revenue,
+      count,
+      average: revenue / count
+    };
+  }, [userOrders]);
 
   const selectedNeighborhood = neighborhoods.find(n => n.id === deliveryAddress.neighborhoodId);
   const deliveryFee = selectedNeighborhood ? selectedNeighborhood.deliveryFee : 0;
@@ -354,6 +379,22 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSaveBanner = async (banner: Banner) => {
+    const newBanners = [...banners, banner];
+    setBanners(newBanners);
+    await storageService.saveBanners(newBanners);
+    showToast("Banner adicionado!", "success");
+  };
+
+  const handleDeleteBanner = async (id: string) => {
+    if (confirm('Remover este banner?')) {
+       const newBanners = banners.filter(b => b.id !== id);
+       setBanners(newBanners);
+       await storageService.saveBanners(newBanners);
+       showToast("Banner removido.", "info");
+    }
+  };
+
   const handleEditNeighborhood = (hood: Neighborhood) => {
     setEditingNeighborhood(hood.id);
     setTempFee(hood.deliveryFee.toString());
@@ -370,6 +411,13 @@ const App: React.FC = () => {
     await storageService.saveNeighborhoods(updatedNeighborhoods);
     setEditingNeighborhood(null);
     showToast("Taxa de entrega atualizada!", "success");
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, status: Order['status']) => {
+    await storageService.updateOrderStatus(orderId, status);
+    // Optimistic
+    setUserOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    showToast(`Status atualizado para ${status}`, "success");
   };
 
   useEffect(() => {
@@ -536,9 +584,12 @@ const App: React.FC = () => {
           <div className="space-y-6 animate-fade-in-up">
             <div className="flex gap-2 border-b border-gray-200 pb-2 overflow-x-auto no-scrollbar">
               <button onClick={() => setActiveAdminTab('products')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'products' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Package size={18} /> Produtos</button>
+              <button onClick={() => setActiveAdminTab('sales')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'sales' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><DollarSign size={18} /> Vendas</button>
+              <button onClick={() => setActiveAdminTab('banners')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'banners' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><ImageIcon size={18} /> Banners</button>
               <button onClick={() => setActiveAdminTab('neighborhoods')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'neighborhoods' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Map size={18} /> Bairros</button>
               <button onClick={() => setActiveAdminTab('users')} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap ${activeAdminTab === 'users' ? 'bg-red-100 text-red-700' : 'text-gray-600'}`}><Users size={18} /> Clientes</button>
             </div>
+            
             {/* Products Tab */}
             {activeAdminTab === 'products' && (
               <>
@@ -563,6 +614,100 @@ const App: React.FC = () => {
                 </div>
               </>
             )}
+
+            {/* Sales Dashboard Tab */}
+            {activeAdminTab === 'sales' && (
+              <div className="space-y-6">
+                {/* Stats Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-4 text-white shadow-lg">
+                    <div className="flex items-center gap-2 mb-2 opacity-80"><DollarSign size={18}/> Faturamento</div>
+                    <div className="text-2xl font-bold">R$ {adminStats.revenue.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-4 text-white shadow-lg">
+                    <div className="flex items-center gap-2 mb-2 opacity-80"><Receipt size={18}/> Pedidos</div>
+                    <div className="text-2xl font-bold">{adminStats.count}</div>
+                  </div>
+                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-4 text-white shadow-lg col-span-2 md:col-span-1">
+                    <div className="flex items-center gap-2 mb-2 opacity-80"><TrendingUp size={18}/> Ticket Médio</div>
+                    <div className="text-2xl font-bold">R$ {adminStats.average.toFixed(2)}</div>
+                  </div>
+                </div>
+
+                {/* Orders List */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="p-4 border-b border-gray-100 font-bold text-gray-800">Histórico de Pedidos</div>
+                  <div className="divide-y divide-gray-100">
+                    {userOrders.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500">Nenhuma venda registrada ainda.</div>
+                    ) : (
+                      userOrders.map(order => (
+                        <div key={order.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-gray-50 transition-colors">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs text-gray-400">#{order.id}</span>
+                              <span className="text-sm font-bold text-gray-900">{order.userName}</span>
+                            </div>
+                            <div className="text-xs text-gray-500 flex flex-col md:flex-row gap-1 md:gap-4">
+                              <span>{new Date(order.date).toLocaleString()}</span>
+                              <span>{order.paymentMethod === 'pix' ? 'PIX' : order.paymentMethod === 'credit_card' ? 'Cartão' : 'Dinheiro'}</span>
+                            </div>
+                            <div className="mt-1 font-medium text-red-600">R$ {(order.total + order.deliveryFee).toFixed(2)}</div>
+                          </div>
+                          
+                          <div className="flex items-center gap-3">
+                             <select 
+                               value={order.status} 
+                               onChange={(e) => handleUpdateOrderStatus(order.id, e.target.value as Order['status'])}
+                               className={`text-xs font-bold px-3 py-1.5 rounded-full border-none outline-none cursor-pointer ${
+                                 order.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                 order.status === 'delivering' ? 'bg-blue-100 text-blue-700' :
+                                 order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                                 'bg-yellow-100 text-yellow-700'
+                               }`}
+                             >
+                               <option value="pending">Pendente</option>
+                               <option value="preparing">Preparando</option>
+                               <option value="delivering">Em Entrega</option>
+                               <option value="completed">Concluído</option>
+                               <option value="cancelled">Cancelado</option>
+                             </select>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Banners Tab */}
+            {activeAdminTab === 'banners' && (
+              <>
+                 <button onClick={() => setIsBannerModalOpen(true)} className="w-full bg-red-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg mb-4"><Plus size={20} /> Novo Banner</button>
+                 <div className="space-y-4">
+                   {banners.map(banner => (
+                     <div key={banner.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative group">
+                        <img src={banner.imageUrl} alt={banner.title} className="w-full h-32 object-cover" />
+                        <div className="absolute inset-0 bg-black/40 flex items-end p-4">
+                           <div className="text-white">
+                             <h3 className="font-bold">{banner.title}</h3>
+                             <p className="text-xs opacity-90">{banner.subtitle}</p>
+                           </div>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteBanner(banner.id)} 
+                          className="absolute top-2 right-2 bg-white/20 hover:bg-red-600 text-white p-2 rounded-full backdrop-blur-md transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                     </div>
+                   ))}
+                   {banners.length === 0 && <p className="text-center text-gray-500 py-4">Nenhum banner ativo. A tela inicial mostrará apenas a lista.</p>}
+                 </div>
+              </>
+            )}
+
              {/* Neighborhoods Tab */}
              {activeAdminTab === 'neighborhoods' && (
                <div className="space-y-3">
@@ -606,16 +751,15 @@ const App: React.FC = () => {
           /* --- USER VIEW --- */
           <>
             {selectedCategory === 'Todos' && !searchQuery && (
-               <div className="mb-6">
+               <div className="mb-2">
                  {user && <h3 className="text-lg font-bold text-gray-800 mb-4">{getGreeting()}, {user.name.split(' ')[0]}! 👋</h3>}
-                <div className="bg-gray-900 rounded-2xl p-6 text-white relative overflow-hidden shadow-xl min-h-[160px] flex items-center transform transition-transform hover:scale-[1.01]">
-                  <div className="relative z-10 w-2/3">
-                    <span className="bg-red-600 text-[10px] font-bold px-2 py-0.5 rounded mb-2 inline-block shadow-sm">OFERTA RELÂMPAGO</span>
-                    <h1 className="text-2xl font-bold mb-2 leading-tight">Churrasco no <br/><span className="text-red-400">Fim de Semana</span></h1>
-                    <button onClick={() => setSelectedCategory('Açougue')} className="bg-white text-gray-900 text-xs px-4 py-2 rounded-full font-bold mt-1 hover:bg-gray-100 transition-colors">Ver Carnes</button>
-                  </div>
-                  <img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" className="absolute right-0 top-0 h-full w-1/2 object-cover opacity-50 mask-image-linear-gradient" alt="BBQ" />
-                </div>
+                 
+                 {/* Dynamic Carousel Component */}
+                 <HeroCarousel 
+                    banners={banners} 
+                    onBannerClick={(cat) => cat && setSelectedCategory(cat)} 
+                 />
+
               </div>
             )}
 
@@ -798,6 +942,11 @@ const App: React.FC = () => {
         onClose={() => setIsProductModalOpen(false)} 
         onSave={handleSaveProduct}
         initialData={editingProduct}
+      />
+      <AdminBannerModal
+        isOpen={isBannerModalOpen}
+        onClose={() => setIsBannerModalOpen(false)}
+        onSave={handleSaveBanner}
       />
       
       {user && (

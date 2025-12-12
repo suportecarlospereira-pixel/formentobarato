@@ -1,4 +1,5 @@
-import { Neighborhood, Product, Category } from './types';
+
+import { Neighborhood, Product, Category, Banner } from './types';
 
 export const CATEGORIES: Category[] = [
   'Todos',
@@ -24,6 +25,25 @@ export const NEIGHBORHOODS: Neighborhood[] = [
   { id: 'cabecudas', name: 'Cabeçudas', deliveryFee: 18.00 },
   { id: 'praia_brava', name: 'Praia Brava', deliveryFee: 22.00 },
   { id: 'murta', name: 'Murta', deliveryFee: 6.00 },
+];
+
+export const DEFAULT_BANNERS: Banner[] = [
+  {
+    id: '1',
+    imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+    title: 'Churrasco no Fim de Semana',
+    subtitle: 'Ofertas imperdíveis no Açougue',
+    targetCategory: 'Açougue',
+    active: true
+  },
+  {
+    id: '2',
+    imageUrl: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
+    title: 'Hortifruti Fresquinho',
+    subtitle: 'Direto do produtor para sua mesa',
+    targetCategory: 'Hortifruti',
+    active: true
+  }
 ];
 
 export const PRODUCTS: Product[] = [

@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -8,6 +9,15 @@ export interface Product {
   unit: string; // e.g., 'un', 'kg', '500g'
   originalPrice?: number; // For promotions
   stock: number; // Inventory count
+}
+
+export interface Banner {
+  id: string;
+  imageUrl: string;
+  title: string;
+  subtitle?: string;
+  targetCategory?: string; // If clicked, filter by this category
+  active: boolean;
 }
 
 export interface CartItem extends Product {
