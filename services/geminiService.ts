@@ -6,7 +6,8 @@ export const getRecipeSuggestion = async (cartItems: CartItem[], userQuery?: str
   try {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      return "Desculpe, o serviço de IA está temporariamente indisponível (Chave de API ausente).";
+      console.error("API_KEY is missing. Please add it to your environment variables (e.g., .env file or Vercel settings).");
+      return "Desculpe, o serviço de IA está indisponível no momento (Configuração de sistema pendente).";
     }
 
     const ai = new GoogleGenAI({ apiKey });
