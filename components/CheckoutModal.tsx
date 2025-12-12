@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { X, CreditCard, QrCode, Banknote, CheckCircle, Copy, Loader2 } from 'lucide-react';
+import { X, CreditCard, QrCode, Banknote, CheckCircle, Copy, Loader2, Phone } from 'lucide-react';
 import { User, Neighborhood, CartItem, PaymentMethod, Order } from '../types';
 import { storageService } from '../services/storageService';
 
@@ -21,6 +22,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [step, setStep] = useState<'method' | 'details' | 'processing' | 'success'>('method');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [cardData, setCardData] = useState({ number: '', name: '', expiry: '', cvv: '' });
+  const [contactPhone, setContactPhone] = useState(user.phone || '');
 
   const pixCode = "00020126580014BR.GOV.BCB.PIX0136123e4567-e89b-12d3-a456-426614174000520400005303986540510.005802BR5913FORMENTO EXPRESS6006ITAJAI62070503***6304E2CA";
 
@@ -31,18 +33,25 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     alert("Código PIX copiado!");
   };
 
-  const handleConfirmOrder = () => {
+  const handleConfirmOrder = async () => {
     if (!selectedMethod) return;
+
+    // Validate phone if missing
+    if (!contactPhone) {
+      alert("Por favor, informe um telefone de contato.");
+      return;
+    }
 
     setStep('processing');
     
-    setTimeout(() => {
+    try {
       const hoodName = neighborhoods.find(n => n.id === address.neighborhoodId)?.name || 'Desconhecido';
       
       const newOrder: Order = {
         id: crypto.randomUUID().slice(0, 8).toUpperCase(),
         userId: user.id,
         userName: user.name,
+        userPhone: contactPhone,
         date: new Date().toISOString(),
         items: cart,
         total: total,
@@ -52,30 +61,49 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         status: 'preparing' 
       };
 
-      storageService.saveOrder(newOrder);
+      await storageService.saveOrder(newOrder);
       setStep('success');
-    }, 2000);
+    } catch (error) {
+      console.error(error);
+      alert("Erro ao conectar com o servidor. Verifique sua internet ou tente novamente.");
+      setStep('details');
+    }
   };
 
   const renderMethodSelection = () => (
-    <div className="space-y-3">
-      <h3 className="text-lg font-bold text-gray-900 mb-4">Forma de Pagamento</h3>
+    <div className="space-y-4">
+      {/* Phone Confirmation */}
+      <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+         <label className="text-xs font-bold text-blue-800 uppercase block mb-1">Contato para entrega</label>
+         <div className="flex items-center gap-2 bg-white rounded-lg border border-blue-200 p-2">
+            <Phone size={16} className="text-blue-500" />
+            <input 
+              type="tel" 
+              value={contactPhone} 
+              onChange={e => setContactPhone(e.target.value)} 
+              placeholder="(47) 99999-9999"
+              className="flex-1 outline-none text-sm text-gray-800"
+            />
+         </div>
+      </div>
+
+      <h3 className="text-lg font-bold text-gray-900 mb-2">Forma de Pagamento</h3>
       
-      <button onClick={() => { setSelectedMethod('pix'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-green-500 bg-white">
+      <button onClick={() => { setSelectedMethod('pix'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-green-500 bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-green-100 p-2 rounded-lg text-green-600"><QrCode size={24} /></div>
           <div className="text-left"><span className="block font-bold text-gray-900">PIX</span><span className="text-xs text-green-600">Aprovado na hora</span></div>
         </div>
       </button>
 
-      <button onClick={() => { setSelectedMethod('credit_card'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-red-500 bg-white">
+      <button onClick={() => { setSelectedMethod('credit_card'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-red-500 bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-red-100 p-2 rounded-lg text-red-600"><CreditCard size={24} /></div>
           <div className="text-left"><span className="block font-bold text-gray-900">Cartão de Crédito</span></div>
         </div>
       </button>
 
-      <button onClick={() => { setSelectedMethod('cash'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-gray-500 bg-white">
+      <button onClick={() => { setSelectedMethod('cash'); setStep('details'); }} className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-gray-500 bg-white shadow-sm">
         <div className="flex items-center gap-3">
           <div className="bg-gray-100 p-2 rounded-lg text-gray-600"><Banknote size={24} /></div>
           <div className="text-left"><span className="block font-bold text-gray-900">Dinheiro</span><span className="text-xs text-gray-500">Pagar na entrega</span></div>

@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { X, User, Lock, MapPin, Mail, Loader2 } from 'lucide-react';
+import { X, User, Lock, MapPin, Mail, Loader2, Phone } from 'lucide-react';
 import { storageService } from '../services/storageService';
 import { User as UserType } from '../types';
 import { NEIGHBORHOODS } from '../constants';
@@ -18,6 +19,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
   // Form States
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [street, setStreet] = useState('');
   const [number, setNumber] = useState('');
@@ -40,6 +42,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
           id: crypto.randomUUID(),
           name,
           email,
+          phone,
           password,
           role: 'customer',
           address: {
@@ -97,6 +100,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onLoginSu
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               </div>
             </div>
+
+            {!isLogin && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Telefone (WhatsApp)</label>
+                <div className="relative">
+                  <input type="tel" required className="w-full bg-gray-50 border border-gray-200 rounded-lg py-3 pl-10 pr-4 outline-none" placeholder="(47) 99999-9999" value={phone} onChange={e => setPhone(e.target.value)} />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Senha</label>
